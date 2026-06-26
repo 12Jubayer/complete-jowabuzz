@@ -1,0 +1,7 @@
+Jowabuzz COMPLETE production upload from 103.168.173.101
+Date: 2026-06-26T20:27:41Z
+Files in snapshot: 11195
+Repo: https://github.com/12Jubayer/complete-jowabuzz.git
+Includes: node_modules/, .env, backend/, frontend/, scripts/
+Note: ssh2/test/fixtures removed (GitHub push-protection only)
+Structure: identical to /www/wwwroot/jowabuzz
