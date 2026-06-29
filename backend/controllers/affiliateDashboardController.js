@@ -8,7 +8,7 @@ import {
   setAffiliateSettlementUserId,
 } from '../services/affiliateSettlementUserService.js';
 import {
-  getUserTransactionMetrics,
+  getReferralDisplayMetrics,
   refreshAffiliateStats,
 } from '../services/affiliateService.js';
 
@@ -133,20 +133,17 @@ export async function getAffiliateReferrals(req, res) {
 
     const referrals = await Promise.all(
       rows.map(async (row) => {
-        const metrics = await getUserTransactionMetrics(row.userId);
-        const generatedCommission = Number(
-          ((metrics.netProfit * commissionPercent) / 100).toFixed(2),
-        );
+        const metrics = await getReferralDisplayMetrics(row.userId, commissionPercent);
 
         return {
           userId: row.userId,
           username: row.username,
           phone: row.phone,
           registrationDate: row.registrationDate,
-          deposit: metrics.totalDeposit,
-          turnover: metrics.totalTurnover,
+          deposit: metrics.deposit,
+          turnover: metrics.turnover,
           profitLoss: metrics.profitLoss,
-          generatedCommission,
+          generatedCommission: metrics.generatedCommission,
         };
       }),
     );
@@ -269,9 +266,9 @@ export async function getAffiliateSettlements(req, res) {
         : `${String(row.start_date).slice(0, 10)} – ${String(row.end_date).slice(0, 10)}`,
       weekStart: row.start_date,
       weekEnd: row.end_date,
-      profit: Number(row.total_profit),
+      profit: Math.max(0, Number(row.total_profit)),
       totalReferrals: Number(row.total_referrals),
-      amount: Number(row.total_commission),
+      amount: Math.max(0, Number(row.total_commission)),
       settlementUserId: row.settlement_user_public_id || null,
       approvedAt: row.approved_at || null,
       status: row.status === 'settled' ? 'released' : row.status,
@@ -283,7 +280,7 @@ export async function getAffiliateSettlements(req, res) {
       recordType: 'weekly_settlement',
       weekStart: row.week_start,
       weekEnd: row.week_end,
-      profit: Number(row.total_profit),
+      profit: Math.max(0, Number(row.total_profit)),
       amount: Number(row.amount),
       settlementUserId: row.settlement_user_public_id || null,
       approvedAt: row.approved_at || null,

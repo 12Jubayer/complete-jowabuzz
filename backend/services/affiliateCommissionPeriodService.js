@@ -253,8 +253,11 @@ export async function calculateDateWiseCommission(affiliateId, startDate, endDat
   );
 
   const [[affiliateRow]] = await pool.query(
-    `SELECT user_id FROM affiliate_profiles WHERE id = ? LIMIT 1`,
+    `SELECT user_id, commission_percent FROM affiliate_profiles WHERE id = ? LIMIT 1`,
     [affiliateId],
+  );
+  const affiliateCommissionPercent = Number(
+    affiliateRow?.commission_percent || defaultPercent,
   );
 
   const userIds = referrals.map((row) => row.user_id);
@@ -269,14 +272,14 @@ export async function calculateDateWiseCommission(affiliateId, startDate, endDat
       `${segment.endDate} 23:59:59`,
     );
 
-    const segmentCommission = (segmentEligible * segment.commissionPercent) / 100;
+    const segmentCommission = (segmentEligible * affiliateCommissionPercent) / 100;
     totalEligibleDeposit += segmentEligible;
     totalCommission += segmentCommission;
 
     breakdown.push({
       startDate: segment.startDate,
       endDate: segment.endDate,
-      commissionPercent: segment.commissionPercent,
+      commissionPercent: affiliateCommissionPercent,
       eligibleDeposit: Number(segmentEligible.toFixed(2)),
       commission: Number(segmentCommission.toFixed(2)),
     });
@@ -284,12 +287,10 @@ export async function calculateDateWiseCommission(affiliateId, startDate, endDat
 
   const amount = Number(totalCommission.toFixed(2));
   const eligible = Number(totalEligibleDeposit.toFixed(2));
-  let commissionPercent = defaultPercent;
+  let commissionPercent = affiliateCommissionPercent;
 
-  if (eligible > 0) {
-    commissionPercent = Number(((amount / eligible) * 100).toFixed(2));
-  } else if (segments.length === 1) {
-    commissionPercent = Number(segments[0].commissionPercent);
+  if (eligible <= 0 && segments.length === 1) {
+    commissionPercent = affiliateCommissionPercent;
   }
 
   const creditUserId = affiliateRow?.user_id ? Number(affiliateRow.user_id) : null;

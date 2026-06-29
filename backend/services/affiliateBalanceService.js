@@ -65,11 +65,18 @@ export async function applyReferralGameProfitLoss(userId, profitLoss, connection
       return null;
     }
 
+    const [[affiliateBalanceRow]] = await conn.query(
+      `SELECT available_balance FROM affiliate_profiles WHERE id = ? FOR UPDATE`,
+      [referrer.affiliate_id],
+    );
+    const nextAvailable = roundMoney(
+      Number(affiliateBalanceRow?.available_balance || 0) + commissionDelta,
+    );
+    const clampedAvailable = roundMoney(Math.max(0, nextAvailable));
+
     await conn.query(
-      `UPDATE affiliate_profiles
-       SET available_balance = available_balance + ?
-       WHERE id = ?`,
-      [commissionDelta, referrer.affiliate_id],
+      `UPDATE affiliate_profiles SET available_balance = ? WHERE id = ?`,
+      [clampedAvailable, referrer.affiliate_id],
     );
 
     await syncAvailableToPendingSettlement(referrer.affiliate_id, conn);
@@ -159,8 +166,16 @@ export async function syncAvailableToPendingSettlement(affiliateId, connection) 
 
   if (!profile) return;
 
-  const available = roundMoney(profile.available_balance);
+  const available = roundMoney(Math.max(0, profile.available_balance));
   const open = await hasOpenAvailableBalanceSettlement(affiliateId, connection);
+
+  if (available <= 0) {
+    await connection.query(
+      `UPDATE affiliate_profiles SET pending_settlement_balance = 0 WHERE id = ?`,
+      [affiliateId],
+    );
+    return;
+  }
 
   if (open) {
     const [[settlement]] = await connection.query(
@@ -237,9 +252,9 @@ export async function getAffiliateBalanceSnapshot(affiliateId, connection = null
   }
 
   return {
-    availableBalance: roundMoney(row.available_balance),
+    availableBalance: roundMoney(Math.max(0, row.available_balance)),
     pendingBalance: roundMoney(row.pending_settlement_balance),
-    totalBalance: roundMoney(row.total_settlement_balance),
+    totalBalance: roundMoney(Math.max(0, row.total_settlement_balance)),
   };
 }
 

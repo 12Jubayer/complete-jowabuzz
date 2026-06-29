@@ -132,7 +132,26 @@ export async function getUserTransactionMetrics(userId, dateFrom = null, dateTo 
     agentParams,
   );
 
-  const deposit = Number(metrics.totalDeposit) + Number(agentMetrics.agentTopupDeposit || 0);
+  const [[agentOnlyRow]] = await pool.query(
+    `SELECT COALESCE(SUM(at.amount), 0) AS agentOnlyDeposit
+     FROM agent_transactions at
+     WHERE at.user_id = ?
+       AND at.type IN ('deposit', 'topup_player')
+       AND at.status IN ('approved', 'completed')${agentDateFilter}
+       AND NOT EXISTS (
+         SELECT 1
+         FROM transactions t
+         WHERE t.user_id = at.user_id
+           AND t.type = 'deposit'
+           AND t.status = 'approved'
+           AND t.amount = at.amount
+           AND DATE(t.created_at) = DATE(at.created_at)
+       )`,
+    agentParams,
+  );
+
+  const deposit =
+    Number(metrics.totalDeposit) + Number(agentOnlyRow?.agentOnlyDeposit || 0);
   const withdraw = Number(metrics.totalWithdraw) + Number(agentMetrics.agentWithdraw || 0);
   const bonus = Number(metrics.totalBonus);
   const rebate = Number(metrics.totalRebate);
@@ -481,3 +500,57 @@ export async function migrateAffiliateSchema() {
 }
 
 export default migrateAffiliateSchema;
+
+export async function getReferralDisplayMetrics(userId, commissionPercent) {
+  const pool = getPool();
+  const rate = Number(commissionPercent || 0);
+
+  const [[depRow]] = await pool.query(
+    `SELECT COALESCE(SUM(amount), 0) AS approvedDeposit
+     FROM transactions
+     WHERE user_id = ? AND type = 'deposit' AND status = 'approved'`,
+    [userId],
+  );
+
+  let approvedDeposit = Number(depRow?.approvedDeposit || 0);
+
+  const [[agentExtra]] = await pool.query(
+    `SELECT COALESCE(SUM(at.amount), 0) AS extra
+     FROM agent_transactions at
+     WHERE at.user_id = ?
+       AND at.type IN ('deposit', 'topup_player')
+       AND at.status IN ('approved', 'completed')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM transactions t
+         WHERE t.user_id = at.user_id
+           AND t.type = 'deposit'
+           AND t.status = 'approved'
+           AND t.amount = at.amount
+           AND DATE(t.created_at) = DATE(at.created_at)
+       )`,
+    [userId],
+  );
+
+  approvedDeposit += Number(agentExtra?.extra || 0);
+
+  const [[gameRow]] = await pool.query(
+    `SELECT COALESCE(SUM(net_amount), 0) AS playerNet
+     FROM game_rounds
+     WHERE user_id = ? AND status = 'settled'`,
+    [userId],
+  );
+
+  const playerNet = Number(gameRow?.playerNet || 0);
+  const houseProfit = Number((-playerNet).toFixed(2));
+  const depositCommission = Number(((approvedDeposit * rate) / 100).toFixed(2));
+  const gamingCommission = Number(((houseProfit * rate) / 100).toFixed(2));
+
+  return {
+    deposit: Number(approvedDeposit.toFixed(2)),
+    turnover: Number(approvedDeposit.toFixed(2)),
+    profitLoss: houseProfit,
+    generatedCommission: depositCommission,
+    gamingCommission,
+  };
+}
