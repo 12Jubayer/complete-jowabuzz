@@ -251,7 +251,6 @@ export async function registerAffiliate(req, res) {
     await setAffiliateSettlementUserId({
       affiliateId: profile.id,
       settlementUserId: settlementValidation.providerUsername,
-      excludeUserId: userId,
       connection,
     });
 
